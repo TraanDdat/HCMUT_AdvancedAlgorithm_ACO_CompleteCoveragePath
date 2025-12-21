@@ -76,6 +76,11 @@ class FieldEnvironment:
         self.gs_left = None
         self.gs_right = None
 
+        self.start_pt = None  # Lưu tọa độ (x, y) frontend
+        self.end_pt = None    # Lưu tọa độ (x, y) frontend
+        self.input_mode = 'normal' # Các chế độ: 'normal', 'set_start', 'set_end'
+
+
     def add_obstacle(self, cell_a, cell_b=None, multiple_grid=False):
         x1, y1 = cell_a
 
@@ -90,7 +95,7 @@ class FieldEnvironment:
             x = self.clamp(x1, self.width)
             y = self.clamp(y1, self.height)
             self.grid[y, x] = self.OBSTACLE
-    # Chú ý: Đã thêm tham số ", path=None" vào cuối dòng định nghĩa hàm
+
     def plot_grid(self, grid=None, seg_grid=None, blocks=None, bboxes=None, show=True, scale=True, show_indices=False, path=None):
         """Draw the field on the left axis (`gs_left`) and optional segmentation/blocks on the
         right axis (`gs_right`) using a single reusable Figure (`self.fig_1`).
@@ -113,20 +118,23 @@ class FieldEnvironment:
         cmap = ListedColormap([self.objcolor[k] for k in sorted(self.objcolor.keys())])
         h, w = grid_to_draw.shape
         # draw with top-left origin so (0,0) maps to top-left cell and ticks align to cells
+        # FIX: Sửa extent để h nằm dưới, 0 nằm trên (khớp với axes)
         self.gs_left.imshow(
             grid_to_draw,
             cmap=cmap,
             vmin=0,
             vmax=len(cmap.colors)-1,
             interpolation="nearest",
-            extent=[0, w, 0, h], origin='upper')
+            extent=[0, w, h, 0],  # Changed from [0, w, 0, h] to [0, w, h, 0]
+            origin='upper')
+            
         # minor ticks on cell boundaries
         self.gs_left.set_xticks(np.arange(0, w + 1, 1), minor=True)
         self.gs_left.set_yticks(np.arange(0, h + 1, 1), minor=True)
         self.gs_left.grid(which="minor", color="lightgray", linewidth=1)
         self.gs_left.set_ylim(h, 0)  # set origin to top-left
         
-        # --- ĐOẠN CODE VẼ ĐƯỜNG ĐI (MỚI THÊM) ---
+        # --- ĐOẠN CODE VẼ ĐƯỜNG ĐI ---
         if path is not None and len(path) > 0:
             # Cộng 0.5 để điểm vẽ nằm giữa ô vuông
             xs = [p[0] + 0.5 for p in path]
@@ -140,11 +148,12 @@ class FieldEnvironment:
             # x indices along bottom
             self.gs_left.set_xticks(np.arange(0.0 + 0.5, w + 0.5, 1.0))
             self.gs_left.set_xticklabels([str(i) for i in range(w)], fontsize=6)
-            # y indices top-to-bottom: we invert y to match image origin
+            # y indices top-to-bottom
             self.gs_left.set_yticks(np.arange(0.0 + 0.5, h + 0.5, 1.0))
             # show labels from 0..h-1 top->bottom
             self.gs_left.set_yticklabels([str(i) for i in range(h)], fontsize=6)
-            self.gs_left.invert_yaxis()
+            
+            # ĐÃ XÓA DÒNG NÀY: self.gs_left.invert_yaxis() 
         else:
             self.gs_left.set_xticks([])
             self.gs_left.set_yticks([])
@@ -162,10 +171,8 @@ class FieldEnvironment:
                     self.gs_right.clear()
                     self.gs_right.text(0.5, 0.5, "Empty seg_grid", ha='center', va='center', transform=self.gs_right.transAxes)
                 else:
-                    extent = [0, max(1, w2), 0, max(1, h2)]
+                    extent = [0, max(1, w2), max(1, h2), 0] # Fix extent here too
                     self.gs_right.imshow(seg_grid, cmap=cmap_blocks, interpolation="nearest", extent=extent,vmax=len(cmap_blocks.colors) - 1, vmin=0, origin='upper')
-                    # enforce axis limits so data coords and patches align; set ylim so 0 is top
-                    # self.gs_right.set_xlim(0, max(1, w2))
                     self.gs_right.set_ylim(max(1, h2), 0)
                     self.gs_right.set_aspect("equal")
                 self.gs_right.set_title("Seg Grid with Blocks", fontsize=8)
@@ -188,113 +195,6 @@ class FieldEnvironment:
         self.fig_1.canvas.draw_idle()
         if show:
             plt.show(block=False)
-    # def plot_grid(self, grid=None, seg_grid=None, blocks=None, bboxes=None, show=True, scale=True, show_indices=False):
-    #     """Draw the field on the left axis (`gs_left`) and optional segmentation/blocks on the
-    #     right axis (`gs_right`) using a single reusable Figure (`self.fig_1`).
-
-    #     - `grid`: array to draw on the left (defaults to `self.grid`).
-    #     - `seg_grid`: optional backend/segmentation grid to draw on the right.
-    #     - `blocks`: optional list of block dicts to overlay on the right axis.
-    #     """
-    #     grid_to_draw = grid if grid is not None else self.grid
-
-    #     # ensure we have a single Figure to reuse and use constrained layout for nicer spacing
-    #     if getattr(self, "fig_1", None) is None or not isinstance(self.fig_1, plt.Figure):
-    #         self.fig_1 = plt.figure(figsize=(FIGURE_WIDTH_DEFAULT, FIGURE_HEIGHT_DEFAULT), constrained_layout=True)
-    #     else:
-    #         # clear existing figure contents but keep same Figure object
-    #         self.fig_1.clf()
-
-    #     # create fresh gridspec/axes attached to the reused figure using add_gridspec
-    #     gs = self.fig_1.add_gridspec(1, 2, width_ratios=[1, 1], wspace=0.08)
-    #     self.gs_left = self.fig_1.add_subplot(gs[0, 0])
-    #     self.gs_right = self.fig_1.add_subplot(gs[0, 1])
-
-    #     # draw grid on the left
-    #     cmap = ListedColormap([self.objcolor[k] for k in sorted(self.objcolor.keys())])
-    #     h, w = grid_to_draw.shape
-    #     # draw with top-left origin so (0,0) maps to top-left cell and ticks align to cells
-    #     self.gs_left.imshow(
-    #         grid_to_draw,
-    #         cmap=cmap,
-    #         vmin=0,
-    #         vmax=len(cmap.colors)-1,
-    #         interpolation="nearest",
-    #         extent=[0, w, 0, h], origin='upper')
-    #     # minor ticks on cell boundaries
-    #     self.gs_left.set_xticks(np.arange(0, w + 1, 1), minor=True)
-    #     self.gs_left.set_yticks(np.arange(0, h + 1, 1), minor=True)
-    #     self.gs_left.grid(which="minor", color="lightgray", linewidth=1)
-    #     self.gs_left.set_ylim(h, 0)  # set origin to top-left
-    #     # optionally show axis indices 0..w-1 and 0..h-1
-    #     if show_indices:
-    #         # x indices along bottom
-    #         self.gs_left.set_xticks(np.arange(0.0 + 0.5, w + 0.5, 1.0))
-    #         self.gs_left.set_xticklabels([str(i) for i in range(w)], fontsize=6)
-    #         # y indices top-to-bottom: we invert y to match image origin
-    #         self.gs_left.set_yticks(np.arange(0.0 + 0.5, h + 0.5, 1.0))
-    #         # show labels from 0..h-1 top->bottom
-    #         self.gs_left.set_yticklabels([str(i) for i in range(h)], fontsize=6)
-    #         self.gs_left.invert_yaxis()
-    #     else:
-    #         self.gs_left.set_xticks([])
-    #         self.gs_left.set_yticks([])
-    #     self.gs_left.set_title("Field landscape", fontsize=6)
-    #     self.gs_left.set_aspect("equal")
-
-    #     self.gs_left.set_title("Field landscape", fontsize=6)
-    #     self.gs_left.set_aspect("equal")
-
-    #     # --- THÊM ĐOẠN CODE NÀY VÀO ---
-    #     # Vẽ đường đi nếu có
-    #     if path is not None and len(path) > 0:
-    #         # Tách tọa độ x và y
-    #         # Cộng 0.5 để đường đi nằm giữa ô lưới thay vì ở góc
-    #         xs = [p[0] + 0.5 for p in path]
-    #         ys = [p[1] + 0.5 for p in path]
-            
-    #         # Vẽ đường màu đỏ, có chấm tròn tại các điểm
-    #         self.gs_left.plot(xs, ys, color='red', linewidth=1.5, marker='o', markersize=2, label='ACO Path')
-    #         # Thêm chú thích
-    #         self.gs_left.legend(loc='upper right', fontsize=6)
-
-    #     # draw seg_grid/blocks on the right if provided, otherwise show information
-    #     if seg_grid is not None:
-    #         try:
-    #             cmap_blocks = ListedColormap([self.gridcolor[k] for k in sorted(self.gridcolor.keys())])  # INVALID, OBSTACLE, FIELD, HEADLAND, TRANSFER
-    #             # show seg_grid with origin upper so row 0 is top
-    #             h2, w2 = seg_grid.shape
-    #             # avoid singular transforms when width/height are zero
-    #             if w2 <= 0 or h2 <= 0:
-    #                 self.gs_right.clear()
-    #                 self.gs_right.text(0.5, 0.5, "Empty seg_grid", ha='center', va='center', transform=self.gs_right.transAxes)
-    #             else:
-    #                 extent = [0, max(1, w2), 0, max(1, h2)]
-    #                 self.gs_right.imshow(seg_grid, cmap=cmap_blocks, interpolation="nearest", extent=extent,vmax=len(cmap_blocks.colors) - 1, vmin=0, origin='upper')
-    #                 # enforce axis limits so data coords and patches align; set ylim so 0 is top
-    #                 # self.gs_right.set_xlim(0, max(1, w2))
-    #                 self.gs_right.set_ylim(max(1, h2), 0)
-    #                 self.gs_right.set_aspect("equal")
-    #             self.gs_right.set_title("Seg Grid with Blocks", fontsize=8)
-    #             self.gs_right.set_xticks([])
-    #             self.gs_right.set_yticks([])
-
-    #         except Exception as _err:
-    #             print("Warning: failed to draw blocks on gs_right:", _err)
-    #     else:
-    #         # show textual information on the right axis
-    #         self.gs_right.clear()
-    #         self.gs_right.set_title("Description", fontsize=6)
-    #         self._show_text(ax=self.gs_right, text=None, mode='information')
-    #         self.gs_right.axis('off')
-
-    #     # store axes if needed elsewhere
-    #     self.axes = [self.gs_left, self.gs_right]
-
-    #     # draw/update display
-    #     self.fig_1.canvas.draw_idle()
-    #     if show:
-    #         plt.show(block=False)
 
     def interactive_grid(self):
         # user can interactively set obstacles on the grid
@@ -315,9 +215,11 @@ class FieldEnvironment:
 
         # from gs_right_middle, break down to create button area
         tmp_gs_right_middle.axis('off')
-        tmp_gs_right_middle = mgridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1, 1], wspace=0.1)
-        gs_bt_reset = fig.add_subplot(tmp_gs_right_middle[0])
-        gs_bt_start = fig.add_subplot(tmp_gs_right_middle[1])
+        tmp_gs_right_middle = mgridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[1, 1], wspace=0.1, hspace=0.1)
+        gs_bt_reset = fig.add_subplot(tmp_gs_right_middle[0, 0])
+        gs_bt_start = fig.add_subplot(tmp_gs_right_middle[0, 1])
+        gs_bt_set_s = fig.add_subplot(tmp_gs_right_middle[1, 0])
+        gs_bt_set_e = fig.add_subplot(tmp_gs_right_middle[1, 1])
 
         # create colormap
         cmap = ListedColormap([self.objcolor[k] for k in sorted(self.objcolor.keys())])
@@ -334,6 +236,21 @@ class FieldEnvironment:
         # # to start planner
         btn_start = self.create_button_start_planner(
             ax_button=gs_bt_start)
+        
+        # Nút Set Start
+        btn_set_s = Button(gs_bt_set_s, 'Set\nStart', color='lightblue', hovercolor='blue')
+        def _set_start_mode(event):
+            self.input_mode = 'set_start'
+            print("Mode: Click a cell to set START point")
+        btn_set_s.on_clicked(_set_start_mode)
+
+        # Nút Set End
+        btn_set_e = Button(gs_bt_set_e, 'Set\nEnd', color='lightpink', hovercolor='red')
+        def _set_end_mode(event):
+            self.input_mode = 'set_end'
+            print("Mode: Click a cell to set END point")
+        btn_set_e.on_clicked(_set_end_mode)
+        # ----------------------
 
         # create table show in the bottom right
         ax_obj_table = gs_right_bottom.table(\
@@ -361,9 +278,24 @@ class FieldEnvironment:
             x = int(event.xdata // cell_width)
             y = int(event.ydata // cell_height)
 
-            y = self.height - 1 - y   # move O(0,0) to top-left corner
+            # --- QUAN TRỌNG: Đã xóa dòng đảo ngược y ở đây ---
+            # y = self.height - 1 - y 
+            # -------------------------------------------------
 
             if 0 <= x < self.width and 0 <= y < self.height:
+
+                if self.input_mode == 'set_start':
+                    self.start_pt = (x, y)
+                    self.input_mode = 'normal' # Quay về bình thường sau khi chọn
+                    self._draw_colored_grid(ax_grid=self.gs_left, ax_desc=self.gs_right_top, mode='information')
+                    return # Kết thúc, không đổi màu ô
+
+                if self.input_mode == 'set_end':
+                    self.end_pt = (x, y)
+                    self.input_mode = 'normal'
+                    self._draw_colored_grid(ax_grid=self.gs_left, ax_desc=self.gs_right_top, mode='information')
+                    return
+                # -----------------------------
                 # if left click, set cell color
                 if event.button == MOUSE_LEFT_CLICK:
                     self.grid[y, x] = (self.grid[y, x] + 1) % 3
@@ -398,7 +330,10 @@ class FieldEnvironment:
 
         # create grid image
         h, w = self.grid.shape
-        ax_grid.imshow(self.grid, cmap=cmap, vmin=0, vmax=len(cmap.colors)-1,interpolation="nearest",extent=[0, w*HEIGHT_SCALE_FRONTEND, 0, h*WIDTH_SCALE_FRONTEND], origin='upper')
+        # FIX: Sửa extent để h nằm dưới, 0 nằm trên (khớp với axes)
+        ax_grid.imshow(self.grid, cmap=cmap, vmin=0, vmax=len(cmap.colors)-1,interpolation="nearest",
+                       extent=[0, w*HEIGHT_SCALE_FRONTEND, h*WIDTH_SCALE_FRONTEND, 0], # Changed from 0,h to h,0
+                       origin='upper')
 
         # create grid
         ax_grid.set_xticks(np.arange(0, w*HEIGHT_SCALE_FRONTEND, HEIGHT_SCALE_FRONTEND), minor=True)
@@ -408,6 +343,20 @@ class FieldEnvironment:
         ax_grid.set_yticks([])
         ax_grid.set_aspect("equal")
         ax_grid.set_ylim(h*WIDTH_SCALE_FRONTEND, 0)  # set origin to top-left
+
+        # Vẽ Start Point (S)
+        if self.start_pt:
+            sx, sy = self.start_pt
+            # Cộng 0.5 để chữ nằm giữa ô
+            ax_grid.text(sx * HEIGHT_SCALE_FRONTEND + 0.5, sy * WIDTH_SCALE_FRONTEND + 0.5, 
+                         'S', ha='center', va='center', color='blue', fontweight='bold', fontsize=12)
+        
+        # Vẽ End Point (E)
+        if self.end_pt:
+            ex, ey = self.end_pt
+            ax_grid.text(ex * HEIGHT_SCALE_FRONTEND + 0.5, ey * WIDTH_SCALE_FRONTEND + 0.5, 
+                         'E', ha='center', va='center', color='red', fontweight='bold', fontsize=12)
+        # ---------------------
 
         # create description show in the top right
         ax_desc.set_title("Description", fontsize=6)
@@ -453,6 +402,8 @@ class FieldEnvironment:
         # callback event for button
         def _reset_grid(event):
             self.grid[:, :] = self.INVALID
+            self.start_pt = None
+            self.end_pt = None
             self._draw_colored_grid(ax_grid=ax_grid, ax_desc=ax_desc, mode='information')
 
         btn.on_clicked(_reset_grid)
@@ -469,7 +420,43 @@ class FieldEnvironment:
             self._draw_colored_grid(ax_grid=self.gs_left, ax_desc=self.gs_right_top, mode='information')
             #processed_backend, seg_grid, blocks, bboxes, valid = compute_headland(self.grid, hl_pass=1)
 
-            processed_backend, seg_grid, blocks, bboxes, path_final, valid = compute_headland(self.grid, hl_pass=1)
+            # Tỷ lệ scale từ Frontend sang Backend
+            scale_x = int(WIDTH_SCALE_BACKEND / WIDTH_SCALE_FRONTEND)
+            scale_y = int(HEIGHT_SCALE_BACKEND / HEIGHT_SCALE_FRONTEND)
+            
+            # Mặc định None nếu người dùng chưa chọn
+            algo_start = None
+            algo_end = None
+
+            if self.start_pt:
+                # Quy đổi tọa độ: backend = frontend * scale
+                # Chọn điểm chính giữa của ô grid backend tương ứng để tránh bị dính vào biên
+                # Hoặc đơn giản là lấy góc trên trái (x*scale, y*scale)
+                s_x = int(self.start_pt[0] * scale_x)
+                s_y = int(self.start_pt[1] * scale_y)
+                
+                # Kiểm tra biên an toàn
+                s_x = min(s_x, self.width * scale_x - 1)
+                s_y = min(s_y, self.height * scale_y - 1)
+                
+                algo_start = (s_x, s_y)
+            
+            if self.end_pt:
+                e_x = int(self.end_pt[0] * scale_x)
+                e_y = int(self.end_pt[1] * scale_y)
+                
+                # Kiểm tra biên an toàn
+                e_x = min(e_x, self.width * scale_x - 1)
+                e_y = min(e_y, self.height * scale_y - 1)
+                
+                algo_end = (e_x, e_y)
+            
+            print(f"User selected inputs -> Start: {algo_start}, End: {algo_end}")
+            # ---------------------------------------
+
+            processed_backend, seg_grid, blocks, bboxes, path_final, valid = compute_headland(
+                self.grid, hl_pass=1, user_start=algo_start, user_end=algo_end
+            )
             # if invalid, show original grid (explicit)
             grid_to_show = processed_backend if valid else self.grid
 
@@ -479,7 +466,7 @@ class FieldEnvironment:
                 prev_fig = getattr(prev_env, "fig_1", None)
                 if prev_fig is not None and plt.fignum_exists(prev_fig.number):
                     # redraw the chosen grid into the existing backend figure (show both left and right)
-                    prev_env.plot_grid(grid=grid_to_show, seg_grid=seg_grid, blocks=blocks, bboxes=bboxes, show=True)
+                    prev_env.plot_grid(grid=grid_to_show, seg_grid=seg_grid, blocks=blocks, bboxes=bboxes, show=True, path=path_final)
                     self._backend_env = prev_env
                     return
 
@@ -504,17 +491,8 @@ class FieldEnvironment:
                 if self.grid[y, x] == self.INVALID:
                     self.grid[y, x] = self.FIELD
 
-def compute_headland(grid, hl_pass):
+def compute_headland(grid, hl_pass, user_start=None, user_end=None):
     """Compute headland on a duplicated-column backend grid.
-    ----------------------> horizontal (x)
-    |
-    |
-    |
-    |
-    |
-    |
-    v
-    vertical (y)
     """
     INVALID = 0
     OBSTACLE = 1
@@ -1115,19 +1093,9 @@ def compute_headland(grid, hl_pass):
     # extract 4 corners of field area from seg_grid for further apply ACO algorithm
     merge_field = rectangles_from_grid_vertical(seg_grid, object='field')
 
-    # Normalize Y so (0,0) is top-left for display, swap ymin/ymax
-    h_seg, w_seg = seg_grid.shape
-    for mf in merge_field:
-        y0 = mf['ymin']
-        y1 = mf['ymax']
-        # flip vertically: new_ymin = height-1 - old_ymax, new_ymax = height-1 - old_ymin
-        mf['ymin'] = h_seg - 1 - y1
-        mf['ymax'] = h_seg - 1 - y0
-        # update corner tuples to match new coordinates
-        mf['top_left'] = (mf['xmin'], mf['ymin'])
-        mf['top_right'] = (mf['xmax'], mf['ymin'])
-        mf['bottom_left'] = (mf['xmin'], mf['ymax'])
-        mf['bottom_right'] = (mf['xmax'], mf['ymax'])
+    # --- QUAN TRỌNG: Đã xóa đoạn code đảo ngược tọa độ y của merge_field ---
+    # Bây giờ dữ liệu gửi vào ACO khớp 100% với hiển thị trên màn hình
+    # ----------------------------------------------------------------------
 
     # add visited flag for further path planning
     for mf in merge_field:
@@ -1150,7 +1118,14 @@ def compute_headland(grid, hl_pass):
     cost = 0
     
     # get final path, list of direction from ACO algorithm
-    path_final, direct_list, coverage_list, cost = aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, start_point_direction=None)
+    path_final, direct_list, coverage_list, cost = aco_algorithm(
+        backend_grid, 
+        seg_grid, 
+        merge_field, 
+        start_point=user_start, 
+        end_point=user_end
+    )
+
     
     # draw path on backend grid for visualization
     # # mark path on backend grid
@@ -1159,8 +1134,8 @@ def compute_headland(grid, hl_pass):
     blocks = []
     bboxes = [] # mark obstacle box or field area (not yet implemented)
 
-    # return backend grid, segmentation, blocks and obstacle bounding boxes for caller to display
-    #return backend_grid, seg_grid, blocks, bboxes, True
+    # # return backend grid, segmentation, blocks and obstacle bounding boxes for caller to display
+    # #return backend_grid, seg_grid, blocks, bboxes, True
     return backend_grid, seg_grid, blocks, bboxes, path_final, True
 
 #######################################################################################################
@@ -1168,7 +1143,7 @@ def compute_headland(grid, hl_pass):
 if __name__ == "__main__":
     # trial with headland calculation & ACO path planning
     hl_pass = 1
-    h = 13 # row
-    w = 3 # column
+    h = 15 # row
+    w = 10 # column
     test_env = FieldEnvironment(width=w, height=h)
     test_env.interactive_grid()

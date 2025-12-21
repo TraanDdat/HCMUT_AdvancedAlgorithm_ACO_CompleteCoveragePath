@@ -99,7 +99,15 @@ class ImprovedACO:
         for dx, dy in moves:
             nx, ny = x + dx, y + dy
             if 0 <= nx < self.cols and 0 <= ny < self.rows:
+                # Kiểm tra ô đích có phải vật cản không
                 if self.grid[ny, nx] != OBSTACLE and self.grid[ny, nx] != INVALID:
+                    # --- FIX: CHẶN CẮT GÓC (CORNER CUTTING) ---
+                    # Nếu đi chéo (dx != 0 và dy != 0), kiểm tra 2 ô kề
+                    if dx != 0 and dy != 0:
+                        if self.grid[y, nx] == OBSTACLE or self.grid[ny, x] == OBSTACLE:
+                            continue # Bỏ qua nước đi này nếu bị kẹt góc
+                    # ------------------------------------------
+
                     if (nx, ny) not in tabu_list:
                         neighbors.append((nx, ny))
         return neighbors
@@ -232,6 +240,7 @@ class ImprovedACO:
         """
         PDF Section: Path smoothing optimization.
         Uses B-spline to reduce turning points and smooth the trajectory.
+        Includes STRICT collision checking to prevent hitting obstacles.
         """
         if len(path) < 3:
             return path
@@ -241,35 +250,52 @@ class ImprovedACO:
             x = [p[0] for p in path]
             y = [p[1] for p in path]
             
-            # B-spline interpolation (requires scipy)
-            # k=3 for cubic B-spline as mentioned in PDF
-            tck, u = splprep([x, y], s=2.0, k=2) # s is smoothing factor
-            u_new = np.linspace(0, 1, num=len(path)*2) # Increase resolution
+            # B-spline interpolation
+            # Giảm s (smoothing factor) xuống nhỏ (0.5) để đường cong bám sát đường gốc hơn
+            tck, u = splprep([x, y], s=0.5, k=2) 
+            
+            # Tăng độ phân giải điểm kiểm tra (num) để phát hiện va chạm kỹ hơn
+            u_new = np.linspace(0, 1, num=len(path) * 5)
             x_new, y_new = splev(u_new, tck)
             
             smoothed_path = []
+            valid_smoothing = True # Cờ kiểm tra
+            
             for i in range(len(x_new)):
-                # Snap to grid integers or keep float depending on requirement
-                # Here we keep integers for grid consistency
                 px, py = int(round(x_new[i])), int(round(y_new[i]))
-                # Ensure we don't hit obstacles after smoothing (simplified check)
-                if 0 <= py < self.rows and 0 <= px < self.cols:
-                     if self.grid[py, px] != OBSTACLE and self.grid[py, px] != INVALID:
-                         smoothed_path.append((px, py))
+                
+                # Kiểm tra biên
+                if not (0 <= py < self.rows and 0 <= px < self.cols):
+                    valid_smoothing = False
+                    break
+                
+                # --- FIX: KIỂM TRA VA CHẠM NGHIÊM NGẶT ---
+                # Nếu bất kỳ điểm nào của đường cong chạm Obstacle -> Hủy toàn bộ
+                if self.grid[py, px] == OBSTACLE or self.grid[py, px] == INVALID:
+                    valid_smoothing = False
+                    break
+                # ------------------------------------------
+                
+                smoothed_path.append((px, py))
             
-            # Remove duplicates
-            final_smooth = []
-            seen = set()
-            for p in smoothed_path:
-                if p not in seen:
-                    final_smooth.append(p)
-                    seen.add(p)
-            
-            # Ensure start and end are preserved
-            if final_smooth[0] != self.start: final_smooth.insert(0, self.start)
-            if final_smooth[-1] != self.end: final_smooth.append(self.end)
-            
-            return final_smooth
+            if valid_smoothing:
+                # Remove duplicates
+                final_smooth = []
+                seen = set()
+                for p in smoothed_path:
+                    if p not in seen:
+                        final_smooth.append(p)
+                        seen.add(p)
+                
+                # Ensure start and end are preserved
+                if final_smooth[0] != self.start: final_smooth.insert(0, self.start)
+                if final_smooth[-1] != self.end: final_smooth.append(self.end)
+                
+                return final_smooth
+            else:
+                # Nếu làm mượt bị lỗi va chạm, trả về đường đi gốc (Raw Path) an toàn
+                print("Smoothing hits obstacle, reverting to raw path.")
+                return path
             
         except ImportError:
             print("Scipy not found, skipping smoothing")
@@ -278,7 +304,7 @@ class ImprovedACO:
             print(f"Smoothing failed: {e}")
             return path
 
-def aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, start_point_direction=None):
+def aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, end_point=None, start_point_direction=None):
     """ 
     Improved ACO algorithm based on:
     'Global and local path planning of robots combining ACO and dynamic window algorithm'
@@ -290,9 +316,9 @@ def aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, start_p
     # 1. Setup Configuration
     h, w = backend_grid.shape
     
-    # Determine Start Point
+    # --- XỬ LÝ ĐIỂM BẮT ĐẦU (START POINT) ---
+    # Nếu người dùng không chọn (None), tự động tìm điểm Field đầu tiên
     if start_point is None:
-        # Find first available FIELD cell
         found = False
         for y in range(h):
             for x in range(w):
@@ -303,25 +329,25 @@ def aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, start_p
             if found: break
         if start_point is None: start_point = (0, 0) # Fallback
 
-    # Determine Target Point (End)
-    # Since the inputs are for coverage (merge_field), but the PDF algorithm is Point-to-Point,
-    # we simulate a goal: The center of the last field block, or the furthest valid point.
-    end_point = None
-    if merge_field and len(merge_field) > 0:
-        last_block = merge_field[-1]
-        # Calculate centroid of the last block
-        cx = (last_block['xmin'] + last_block['xmax']) // 2
-        cy = (last_block['ymin'] + last_block['ymax']) // 2
-        end_point = (cx, cy)
-    else:
-        # Default to bottom-rightmost field
-        end_point = start_point # Fallback
-        for y in range(h-1, -1, -1):
-            for x in range(w-1, -1, -1):
-                if backend_grid[y, x] == FIELD:
-                    end_point = (x, y)
-                    break
-            if end_point != start_point: break
+    # --- XỬ LÝ ĐIỂM KẾT THÚC (END POINT) ---
+    # Nếu người dùng không chọn (None), tự động tính toán
+    if end_point is None:
+        if merge_field and len(merge_field) > 0:
+            last_block = merge_field[-1]
+            # Calculate centroid of the last block
+            cx = (last_block['xmin'] + last_block['xmax']) // 2
+            cy = (last_block['ymin'] + last_block['ymax']) // 2
+            # Mặc định lấy góc dưới phải nếu không có input
+            end_point = (w - 1, h - 1)
+        else:
+            # Default to bottom-rightmost field
+            end_point = start_point # Fallback
+            for y in range(h-1, -1, -1):
+                for x in range(w-1, -1, -1):
+                    if backend_grid[y, x] == FIELD:
+                        end_point = (x, y)
+                        break
+                if end_point != start_point: break
 
     print(f"ACO Planning: Start={start_point}, End={end_point}")
 
@@ -363,7 +389,6 @@ def aco_algorithm(backend_grid, seg_grid, merge_field, start_point=None, start_p
             direct_list.append(direction)
             
             # Mock coverage calculation (percentage of FIELD cells visited)
-            # In a real coverage planner, this would track visited set vs total field set
             coverage_list.append(min(100, (i / len(path_final)) * 100)) # Placeholder
 
     if not path_final:
