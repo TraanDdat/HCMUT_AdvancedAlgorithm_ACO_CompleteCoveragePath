@@ -157,13 +157,33 @@ class FieldEnvironment:
         self.gs_1.set_yticks(np.arange(0, h + 1, 1), minor=True)
         self.gs_1.grid(which="minor", color="lightgray", linewidth=1)
         
+        # # redraw path is not None
+        # if path is not None and len(path) > 0:
+        #     # middle of cell
+        #     xs = [p[0] + 0.5 for p in path]
+        #     ys = [p[1] + 0.5 for p in path]
+        #     self.gs_1.plot(xs, ys, color='red', linewidth=1.5, marker='o', markersize=3, label='ACO Path')
+        #     self.gs_1.legend(loc='upper right', fontsize=6)
+
         # redraw path is not None
         if path is not None and len(path) > 0:
             # middle of cell
             xs = [p[0] + 0.5 for p in path]
             ys = [p[1] + 0.5 for p in path]
-            self.gs_1.plot(xs, ys, color='red', linewidth=1.5, marker='o', markersize=3, label='ACO Path')
-            self.gs_1.legend(loc='upper right', fontsize=6)
+            
+            # Vẽ đường nối
+            self.gs_1.plot(xs, ys, color='red', linewidth=2, alpha=0.8, label='ACO Path', zorder=10)
+            
+            # Vẽ các điểm nút (nhỏ hơn)
+            self.gs_1.scatter(xs, ys, color='darkred', s=10, zorder=11)
+            
+            # Đánh dấu điểm bắt đầu (Xanh lá)
+            self.gs_1.plot(xs[0], ys[0], marker='*', color='lime', markersize=12, markeredgecolor='black', zorder=12, label='Start')
+            
+            # Đánh dấu điểm kết thúc (Xanh dương)
+            self.gs_1.plot(xs[-1], ys[-1], marker='X', color='cyan', markersize=10, markeredgecolor='black', zorder=12, label='End')
+
+            self.gs_1.legend(loc='upper right', fontsize=6)    
 
         # optionally show axis indices 0..w-1 and 0..h-1
         if show_indices:
@@ -1266,7 +1286,7 @@ def compute_headland(grid, hl_pass, user_start=None, user_end=None, is_obstacle_
         seg_grid, 
         merge_field, 
         start_point=user_start, 
-        end_point=user_end
+        # end_point=user_end
     )
 
     
@@ -1286,7 +1306,7 @@ def compute_headland(grid, hl_pass, user_start=None, user_end=None, is_obstacle_
 if __name__ == "__main__":
     # trial with headland calculation & ACO path planning
     hl_pass = 1
-    h = 12 # row
-    w = 8 # column
+    h = 15 # row
+    w = 10 # column
     test_env = FieldEnvironment(width=w, height=h)
     test_env.interactive_grid()
